@@ -1,0 +1,38 @@
+version: '3.9'
+
+services:
+  backend:
+    image: ondiekifrank/backend:1.01
+    ports:
+      - "3001:3000"
+    depends_on:
+      - mongodb
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/yolomy
+    networks:
+      - app-network
+
+  frontend:
+    image: ondiekifrank/clientapp:1.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  mongodb:
+    image: ondiekifrank/mongodb:1.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+
+volumes:
+  mongo-data:
+
+networks:
+  app-network:
+    driver: bridge

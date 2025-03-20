@@ -1,0 +1,47 @@
+---
+- name: Install Node.js
+  apt:
+    name: nodejs
+    state: present
+  tags: backend
+
+- name: Install npm
+  apt:
+    name: npm
+    state: present
+  tags: backend
+
+- name: Remove existing backend directory
+  file:
+    path: /var/www/backend
+    state: absent
+  tags: backend
+
+- name: Clone backend repository (full clone)
+  git:
+    repo: 'https://github.com/OndiekiFrank/yolo.git'
+    dest: /var/www/backend
+    version: HEAD
+  tags: backend
+
+- name: List files in /var/www/backend
+  command: ls -la /var/www/backend
+  register: backend_dir_contents
+  tags: backend
+
+- name: Print backend directory contents
+  debug:
+    var: backend_dir_contents.stdout_lines
+  tags: backend
+
+- name: Install npm dependencies
+  command: npm install
+  args:
+    chdir: /var/www/backend/backend
+  tags: backend
+
+- name: Start backend server
+  command: npm start
+  args:
+    chdir: /var/www/backend/backend
+  tags: backend

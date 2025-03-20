@@ -1,0 +1,163 @@
+---
+- name: Deploy e-commerce application
+  hosts: all
+  become: yes
+  vars:
+    docker_compose_version: "1.29.2"
+    git_clone_retries: 5
+    git_clone_delay: 30
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+
+    - name: Install pip3
+      apt:
+        name: python3-pip
+        state: present
+
+    - name: Install Docker module for Python
+      pip:
+        name: docker
+        executable: pip3
+
+    - name: Gather system architecture
+      set_fact:
+        compose_arch: "{{ ansible_architecture | lower }}"
+        compose_os: "{{ ansible_system | lower }}"
+
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-{{ compose_os }}-{{ compose_arch }}"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Install MongoDB
+      apt:
+        name: mongodb
+        state: present
+      tags: database
+
+    - name: Stop MongoDB service if running
+      service:
+        name: mongodb
+        state: stopped
+      ignore_errors: yes
+      tags: database
+
+    - name: Stop and remove existing Docker containers
+      shell: |
+        docker stop $(docker ps -a -q) || true
+        docker rm $(docker ps -a -q) || true
+      ignore_errors: yes
+      tags: docker
+
+    - name: Remove existing frontend directory
+      file:
+        path: /var/www/frontend/client
+        state: absent
+      tags: frontend
+
+    - name: Increase Git buffer size
+      shell: git config --global http.postBuffer 524288000
+      tags: frontend
+
+    - name: Increase Git clone timeout
+      shell: git config --global http.lowSpeedLimit 0
+      tags: frontend
+
+    - name: Increase Git clone timeout
+      shell: git config --global http.lowSpeedTime 999
+      tags: frontend
+
+    - name: Clone frontend repository with retries
+      block:
+        - name: Clone frontend repository
+          git:
+            repo: 'https://github.com/OndiekiFrank/yolo.git'
+            dest: /var/www/frontend/client
+            version: HEAD
+          register: git_result
+          until: git_result is succeeded
+          retries: "{{ git_clone_retries }}"
+          delay: "{{ git_clone_delay }}"
+          tags: frontend
+
+    - name: List files in /var/www/frontend/client
+      command: ls -la /var/www/frontend/client
+      register: client_dir_contents
+      tags: frontend
+
+    - name: Print client directory contents
+      debug:
+        var: client_dir_contents.stdout_lines
+      tags: frontend
+
+    - name: Remove existing backend directory
+      file:
+        path: /var/www/backend/backend
+        state: absent
+      tags: backend
+
+    - name: Clone backend repository with retries
+      block:
+        - name: Clone backend repository
+          git:
+            repo: 'https://github.com/OndiekiFrank/yolo.git'
+            dest: /var/www/backend/backend
+            version: HEAD
+          register: git_result
+          until: git_result is succeeded
+          retries: "{{ git_clone_retries }}"
+          delay: "{{ git_clone_delay }}"
+          tags: backend
+
+    - name: List files in /var/www/backend/backend
+      command: ls -la /var/www/backend/backend
+      register: backend_dir_contents
+      tags: backend
+
+    - name: Print backend directory contents
+      debug:
+        var: backend_dir_contents.stdout_lines
+      tags: backend
+
+    - name: Copy docker-compose.yml to VM
+      copy:
+        src: ./docker-compose.yml
+        dest: /var/www/docker-compose.yml
+
+    - name: Ensure Docker service is started
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Bring up Docker containers
+      command: docker-compose up -d
+      args:
+        chdir: /var/www
